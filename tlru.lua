@@ -2,6 +2,7 @@
 -- Copyright (c) 2024 liaozhaoyan
 
 local lrbtree = require "lrbtree"
+local socket = require("socket")
 
 local tlru = {}
 
@@ -141,6 +142,7 @@ function tlru.new(maxSize)
             overDelete(tuple[TTL], key)
             del(key, tuple)
         end
+        local ts1, ts2 = 0, 0
         
         if value then
             -- the value is not removed
@@ -156,7 +158,9 @@ function tlru.new(maxSize)
 
             local lMap = tMap[lifeTime]
             if lMap then
+                ts1 = socket.gettime()
                 lMap[key] = true   --> The code executes very slowly here, even slower than pure lua, I don't know why.
+                ts2 = socket.gettime()
             else
                 tMap[lifeTime] = {[key] = 1}
                 rbTime:insert(lifeTime)
@@ -165,6 +169,7 @@ function tlru.new(maxSize)
             assert(key ~= nil, "Key may not be nil")
         end
         removedTuple = nil
+        return ts2 - ts1
     end
 
     

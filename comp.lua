@@ -4,7 +4,7 @@ local socket = require("socket")
 
 
 local cache
-local N = 8000000
+local N = 5000000
 local M = 1000
 local ts1, ts2
 
@@ -24,9 +24,10 @@ print("lru used:", ts2 - ts1)
 
 cache = tlru.new(M)
 ts1 = socket.gettime()
+local total = 0
 for i = 1, N do
-    cache:set(i, i)
+    total = total + cache:set(i, i)
 end
 ts2 = socket.gettime()
 assert(cache:count() == M)
-print("tlru used:", ts2 - ts1)
+print("tlru used:", ts2 - ts1, total)
