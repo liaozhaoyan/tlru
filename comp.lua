@@ -4,8 +4,8 @@ local socket = require("socket")
 
 
 local cache
-local N = 5000000
-local M = 100
+local N = 8000000
+local M = 1000
 local ts1, ts2
 
 ts1 = socket.gettime()
