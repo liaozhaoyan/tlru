@@ -7,7 +7,9 @@ local socket = require("socket")
 local tlru = {}
 
 function tlru.new(maxSize)
-    assert(maxSize >= 1, "maxSize must be >= 1")
+    if maxSize then
+        assert(maxSize >= 1, "maxSize must be >= 1")
+    end
     local size = 0
     local rbTime = lrbtree.new(function (a, b) return a - b end)
     local tMap = {}
@@ -85,7 +87,7 @@ function tlru.new(maxSize)
     -- removes elemenets to provide enough memory
     -- returns last removed element or nil
     local function makeFreeSpace()
-        if size == maxSize then
+        if maxSize and size == maxSize then
             assert(oldest, "bad logic for this package.")
             local key = oldest[KEY]
             overDelete(oldest[TTL], key)
@@ -208,6 +210,10 @@ function tlru.new(maxSize)
         else
             return nil
         end
+    end
+
+    local function resize()
+        -- body
     end
 
     -- returns iterator for keys and values
