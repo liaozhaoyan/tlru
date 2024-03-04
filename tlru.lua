@@ -2,11 +2,18 @@
 -- Copyright (c) 2024 liaozhaoyan
 
 local lrbtree = require "lrbtree"
+local socket = require("socket")
 
 local tlru = {}
 
-function tlru.new(maxSize)
-    assert(maxSize >= 1, "maxSize must be >= 1")
+function tlru.new(maxSize, auto)
+    if maxSize then
+        assert(maxSize >= 1, "maxSize must be >= 1")
+    end
+    if auto == nil then
+        auto = true  --> default true
+    end
+
     local size = 0
     local rbTime = lrbtree.new(function (a, b) return a - b end)
     local tMap = {}
@@ -84,11 +91,12 @@ function tlru.new(maxSize)
     -- removes elemenets to provide enough memory
     -- returns last removed element or nil
     local function makeFreeSpace()
-        if size == maxSize then
-            assert(oldest, "bad logic for this package.")
-            local key = oldest[KEY]
-            overDelete(oldest[TTL], key)
-            del(key, oldest)
+        if maxSize  then
+            while size >= maxSize do
+                local key = oldest[KEY]
+                overDelete(oldest[TTL], key)
+                del(key, oldest)
+            end
         end
     end
 
@@ -105,7 +113,7 @@ function tlru.new(maxSize)
     end
 
     local function count(_)
-        ttlDelete(os.time())
+        if auto then ttlDelete(os.time()) end
         return size
     end
 
@@ -120,13 +128,13 @@ function tlru.new(maxSize)
     end
 
     local function get(_, key)
-        ttlDelete(os.time())
+        if auto then ttlDelete(os.time()) end
 
         return _get(key)
     end
 
     local function gets(_, keys)
-        ttlDelete(os.time())
+        if auto then ttlDelete(os.time()) end
 
         local maps = {}
         for _, key in ipairs(keys) do
@@ -141,6 +149,7 @@ function tlru.new(maxSize)
             overDelete(tuple[TTL], key)
             del(key, tuple)
         end
+        local ts1, ts2 = 0, 0
         
         if value then
             -- the value is not removed
@@ -156,7 +165,9 @@ function tlru.new(maxSize)
 
             local lMap = tMap[lifeTime]
             if lMap then
+                ts1 = socket.gettime()
                 lMap[key] = true   --> The code executes very slowly here, even slower than pure lua, I don't know why.
+                ts2 = socket.gettime()
             else
                 tMap[lifeTime] = {[key] = 1}
                 rbTime:insert(lifeTime)
@@ -165,6 +176,7 @@ function tlru.new(maxSize)
             assert(key ~= nil, "Key may not be nil")
         end
         removedTuple = nil
+        return ts2 - ts1
     end
 
     
@@ -173,22 +185,22 @@ function tlru.new(maxSize)
         assert(ttl > 0, "TTL must be > 0")
 
         local now = os.time()
-        ttlDelete(now)
+        if auto then ttlDelete(now) end
     
         return _set(key, value, ttl + now)
     end
 
     local function sets(_, items)
         local now = os.time()
-        ttlDelete(now)
+        if auto then ttlDelete(now) end
 
         for _, item in ipairs(items) do
             _set(item[1], item[2], item[3] and item[3] + now or math.huge)
         end
     end
 
-    local function delete(_, key)
-        return set(_, key, nil)
+    local function delete(o, key)
+        return set(o, key, nil)
     end
 
     local function Next(_, prev_key)
@@ -205,10 +217,25 @@ function tlru.new(maxSize)
         end
     end
 
+    local function resize(_, var)
+        if auto then ttlDelete(os.time()) end
+        if var then
+            maxSize = var + 1
+            makeFreeSpace()
+            maxSize = var
+        else
+            maxSize = nil
+        end
+    end
+
     -- returns iterator for keys and values
-    local function lru_pairs()
-        ttlDelete(os.time())
+    local function lruPairs()
+        if auto then ttlDelete(os.time()) end
         return Next, nil, nil
+    end
+
+    local function flush(_)
+        ttlDelete(os.time())
     end
 
     local mt = {
@@ -219,11 +246,15 @@ function tlru.new(maxSize)
             sets = sets,
             count = count,
             delete = delete,
-            pairs = lru_pairs,
+            resize = resize,
+            pairs = lruPairs
         },
         __newindex = function (o, key, value) return o:set(key, value) end,
         __call = function (o, key) return o:get(key) end
     }
+    if not auto then
+        mt.__index.flush = flush
+    end
 
     return setmetatable({}, mt)
 end

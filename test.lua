@@ -136,3 +136,46 @@ for i = 1, N do
     lru:set(i, i)
 end
 assert(lru:count() == 1000)
+
+-- test with resize
+lru = tlru.new()
+local M = 1000
+for i = 1, M do
+    lru:set(i, i)
+end
+assert(lru:count() == M)
+lru:resize(100)   -->reduce
+assert(lru:count() == 100, string.format("count: %d", lru:count()))
+lru:resize(M)     -->expand
+assert(lru:count() == 100)
+for i = 1, M do
+    lru:set(i, i)
+end
+assert(lru:get(1) == 1)
+assert(lru:count() == M)
+
+
+-- test with flush
+lru = tlru.new(nil, false)
+assert(lru.flush ~= nil)
+assert(lru:count() == 0)
+local L = 5
+for i = 1, L do
+    lru:set(i, i, i)
+end
+assert(lru:get(1) == 1)
+assert(lru:count() == L)
+
+socket.sleep(1)
+assert(lru:count() == L)
+lru:flush()
+assert(lru:count() == L - 1)
+assert(lru:get(1) == nil)
+assert(lru:get(2) == 2)
+lru:delete(2)
+assert(lru:get(2) == nil)
+assert(lru:count() == L - 2)
+socket.sleep(L - 1)
+assert(lru:count() == L - 2)
+lru:flush()
+assert(lru:count() == 0)
