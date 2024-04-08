@@ -117,6 +117,11 @@ function tlru.new(maxSize, auto)
         return size
     end
 
+    local function max(_)
+        if auto then ttlDelete(os.time()) end
+        return maxSize
+    end
+
     local function _get(key)
         local tuple = map[key]
         if not tuple then
@@ -245,6 +250,7 @@ function tlru.new(maxSize, auto)
             set = set,
             sets = sets,
             count = count,
+            max = max,
             delete = delete,
             resize = resize,
             pairs = lruPairs

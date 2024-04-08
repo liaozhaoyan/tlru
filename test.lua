@@ -5,6 +5,8 @@ local socket = require("socket")
 -- base test, without ttl
 local lru = tlru.new(10)
 assert(lru:count() == 0)
+assert(lru.max() == 10)
+assert(lru.flush == nil)
 
 lru:set("a", 1)
 assert(lru:count() == 1)

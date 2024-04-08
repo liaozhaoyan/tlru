@@ -1,5 +1,5 @@
 package = "tlru"
-version = "1.0-2"
+version = "1.0-4"
 source = {
     url = "git://github.com/liaozhaoyan/tlru",
 }
