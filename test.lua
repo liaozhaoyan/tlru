@@ -6,7 +6,7 @@ local socket = require("socket")
 local lru = tlru.new(10)
 assert(lru:count() == 0)
 assert(lru.max() == 10)
-assert(lru.flush == nil)
+assert(lru.flush == nil)  -- flush is not supported for base lru,
 
 lru:set("a", 1)
 assert(lru:count() == 1)
@@ -20,6 +20,7 @@ lru:set("h", 8)
 lru:set("i", 9)
 lru:set("j", 10)
 assert(lru:count() == 10)
+assert(lru.max() == 10)
 
 assert(lru:get("a") == 1)
 assert(lru:get("b") == 2)
@@ -159,7 +160,7 @@ assert(lru:count() == M)
 
 -- test with flush
 lru = tlru.new(nil, false)
-assert(lru.flush ~= nil)
+assert(lru.flush ~= nil)  -- if auto is false, flush will set.
 assert(lru:count() == 0)
 local L = 5
 for i = 1, L do
