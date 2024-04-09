@@ -2,7 +2,8 @@
 -- Copyright (c) 2024 liaozhaoyan
 
 local lrbtree = require "lrbtree"
-local socket = require("socket")
+
+local time = os.time
 
 local tlru = {}
 
@@ -113,12 +114,12 @@ function tlru.new(maxSize, auto)
     end
 
     local function count(_)
-        if auto then ttlDelete(os.time()) end
+        if auto then ttlDelete(time()) end
         return size
     end
 
     local function max(_)
-        if auto then ttlDelete(os.time()) end
+        if auto then ttlDelete(time()) end
         return maxSize
     end
 
@@ -133,13 +134,13 @@ function tlru.new(maxSize, auto)
     end
 
     local function get(_, key)
-        if auto then ttlDelete(os.time()) end
+        if auto then ttlDelete(time()) end
 
         return _get(key)
     end
 
     local function gets(_, keys)
-        if auto then ttlDelete(os.time()) end
+        if auto then ttlDelete(time()) end
 
         local maps = {}
         for _, key in ipairs(keys) do
@@ -154,7 +155,6 @@ function tlru.new(maxSize, auto)
             overDelete(tuple[TTL], key)
             del(key, tuple)
         end
-        local ts1, ts2 = 0, 0
         
         if value then
             -- the value is not removed
@@ -170,9 +170,7 @@ function tlru.new(maxSize, auto)
 
             local lMap = tMap[lifeTime]
             if lMap then
-                ts1 = socket.gettime()
                 lMap[key] = true   --> The code executes very slowly here, even slower than pure lua, I don't know why.
-                ts2 = socket.gettime()
             else
                 tMap[lifeTime] = {[key] = 1}
                 rbTime:insert(lifeTime)
@@ -181,7 +179,6 @@ function tlru.new(maxSize, auto)
             assert(key ~= nil, "Key may not be nil")
         end
         removedTuple = nil
-        return ts2 - ts1
     end
 
     
@@ -189,15 +186,15 @@ function tlru.new(maxSize, auto)
         ttl = ttl or math.huge
         assert(ttl > 0, "TTL must be > 0")
 
-        local now = os.time()
+        local now = time()
         if auto then ttlDelete(now) end
     
         return _set(key, value, ttl + now)
     end
 
     local function sets(_, items)
-        local now = os.time()
-        if auto then ttlDelete(now) end
+        local now = time()
+        if auto then ttlDelete(time()) end
 
         for _, item in ipairs(items) do
             _set(item[1], item[2], item[3] and item[3] + now or math.huge)
@@ -223,7 +220,7 @@ function tlru.new(maxSize, auto)
     end
 
     local function resize(_, var)
-        if auto then ttlDelete(os.time()) end
+        if auto then ttlDelete(time()) end
         if var then
             maxSize = var + 1
             makeFreeSpace()
@@ -235,12 +232,12 @@ function tlru.new(maxSize, auto)
 
     -- returns iterator for keys and values
     local function lruPairs()
-        if auto then ttlDelete(os.time()) end
+        if auto then ttlDelete(time()) end
         return Next, nil, nil
     end
 
     local function flush(_)
-        ttlDelete(os.time())
+        ttlDelete(time())
     end
 
     local mt = {
