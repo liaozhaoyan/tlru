@@ -4,20 +4,35 @@
 local lrbtree = require "lrbtree"
 
 local time = os.time
+local pairs = pairs
+local ipairs = ipairs
+local setmetatable = setmetatable
+local mathHuge = math.huge
 
 local tlru = {}
 
-function tlru.new(maxSize, auto)
+local modeMap = {
+    lru = true,
+    ttl = true,
+    flush = true
+}
+
+function tlru.new(maxSize, mode)
+    -- mode lru: pure lru, no ttl; 
+    --      ttl: lru with ttl; 
+    --      flush: lru with ttl and manual flush
     if maxSize then
         assert(maxSize >= 1, "maxSize must be >= 1")
     end
-    if auto == nil then
-        auto = true  --> default true
-    end
+    mode = mode or "lru"
+    assert(modeMap[mode], "mode must be lru, ttl or flush")
 
     local size = 0
-    local rbTime = lrbtree.new(function (a, b) return a - b end)
-    local tMap = {}
+    local rbTime, tMap
+    if mode ~= 'lru' then
+        rbTime = lrbtree.new(function (a, b) return a - b end)
+        tMap = {}
+    end
 
     -- map is a hash map from keys to tuples
     -- tuple: value, prev, next, key
@@ -92,10 +107,20 @@ function tlru.new(maxSize, auto)
     -- removes elemenets to provide enough memory
     -- returns last removed element or nil
     local function makeFreeSpace()
-        if maxSize  then
+        if maxSize then
             while size >= maxSize do
                 local key = oldest[KEY]
                 overDelete(oldest[TTL], key)
+                del(key, oldest)
+            end
+        end
+    end
+
+    -- no ttl option
+    local function makeFreeSpaceLru()
+        if maxSize  then
+            while size >= maxSize do
+                local key = oldest[KEY]
                 del(key, oldest)
             end
         end
@@ -114,12 +139,20 @@ function tlru.new(maxSize, auto)
     end
 
     local function count(_)
-        if auto then ttlDelete(time()) end
+        return size
+    end
+
+    local function countFlush(_)
+        ttlDelete(time())
         return size
     end
 
     local function max(_)
-        if auto then ttlDelete(time()) end
+        return maxSize
+    end
+
+    local function maxFlush(_)
+        ttlDelete(time())
         return maxSize
     end
 
@@ -134,19 +167,26 @@ function tlru.new(maxSize, auto)
     end
 
     local function get(_, key)
-        if auto then ttlDelete(time()) end
+        return _get(key)
+    end
 
+    local function getFlush(_, key)
+        ttlDelete(time())
         return _get(key)
     end
 
     local function gets(_, keys)
-        if auto then ttlDelete(time()) end
-
         local maps = {}
         for _, key in ipairs(keys) do
             maps[key] = _get(key)
         end
         return maps
+    end
+
+    local function getsFlush(o, keys)
+        ttlDelete(time())
+
+        return gets(o, keys)
     end
 
     local function _set(key, value, lifeTime)
@@ -181,27 +221,80 @@ function tlru.new(maxSize, auto)
         removedTuple = nil
     end
 
+    local function setLru(_, key, value)
+        local tuple = map[key]
+        if tuple then
+            del(key, tuple)
+        end
+
+        if value then
+            -- the value is not removed
+            makeFreeSpaceLru()
+
+            local newTuple = removedTuple or {nil, nil, nil, nil, nil}
+            map[key] = newTuple
+            newTuple[VALUE] = value
+            newTuple[KEY] = key
+            size = size + 1
+            setNewest(newTuple)
+        else
+            assert(key ~= nil, "Key may not be nil")
+        end
+        removedTuple = nil
+    end
     
     local function set(_, key, value, ttl)
-        ttl = ttl or math.huge
+        ttl = ttl or mathHuge
         assert(ttl > 0, "TTL must be > 0")
 
         local now = time()
-        if auto then ttlDelete(now) end
     
         return _set(key, value, ttl + now)
     end
 
-    local function sets(_, items)
-        local now = time()
-        if auto then ttlDelete(time()) end
+    local function setFlush(_, key, value, ttl)
+        ttl = ttl or mathHuge
+        assert(ttl > 0, "TTL must be > 0")
 
+        local now = time()
+        ttlDelete(now)
+    
+        return _set(key, value, ttl + now)
+    end
+
+    local function setsLru(o, items)
         for _, item in ipairs(items) do
-            _set(item[1], item[2], item[3] and item[3] + now or math.huge)
+            setLru(o, item[1], item[2])
         end
     end
 
+    local function sets(_, items)
+        local now = time()
+
+        for _, item in ipairs(items) do
+            _set(item[1], item[2], item[3] and item[3] + now or mathHuge)
+        end
+    end
+
+    local function setsFlush(_, items)
+        local now = time()
+        ttlDelete(now)
+        
+        for _, item in ipairs(items) do
+            _set(item[1], item[2], item[3] and item[3] + now or mathHuge)
+        end
+    end
+
+    local function deleteLru(o, key)
+        return setLru(o, key, nil)
+    end
+
     local function delete(o, key)
+        return set(o, key, nil)
+    end
+
+    local function deleteFlush(o, key)
+        ttlDelete(time())
         return set(o, key, nil)
     end
 
@@ -219,8 +312,17 @@ function tlru.new(maxSize, auto)
         end
     end
 
+    local function resizeLru(_, var)
+        if var then
+            maxSize = var + 1
+            makeFreeSpaceLru()
+            maxSize = var
+        else
+            maxSize = nil
+        end
+    end
+
     local function resize(_, var)
-        if auto then ttlDelete(time()) end
         if var then
             maxSize = var + 1
             makeFreeSpace()
@@ -230,9 +332,18 @@ function tlru.new(maxSize, auto)
         end
     end
 
+    local function resizeFlush(o, var)
+        ttlDelete(time())
+        return resize(o, var)
+    end
+
     -- returns iterator for keys and values
-    local function lruPairs()
-        if auto then ttlDelete(time()) end
+    local function lruPairs(_)
+        return Next, nil, nil
+    end
+
+    local function lruPairsFlush(_)
+        ttlDelete(time())
         return Next, nil, nil
     end
 
@@ -240,23 +351,56 @@ function tlru.new(maxSize, auto)
         ttlDelete(time())
     end
 
-    local mt = {
-        __index = {
-            get = get,
-            gets = gets,
-            set = set,
-            sets = sets,
-            count = count,
-            max = max,
-            delete = delete,
-            resize = resize,
-            pairs = lruPairs
-        },
-        __newindex = function (o, key, value) return o:set(key, value) end,
-        __call = function (o, key) return o:get(key) end
-    }
-    if not auto then
-        mt.__index.flush = flush
+    local mt
+    if mode == "ttl" then  -- automatic flush
+        mt = {
+            __index = {
+                get = getFlush,
+                gets = getsFlush,
+                set = setFlush,
+                sets = setsFlush,
+                count = countFlush,
+                max = maxFlush,
+                delete = deleteFlush,
+                resize = resizeFlush,
+                pairs = lruPairsFlush,
+            },
+            __newindex = function (o, key, value) return o:set(key, value) end,
+            __call = function (o, key) return o:get(key) end
+        }
+    elseif mode == "flush" then
+        mt = {
+            __index = {
+                get = get,
+                gets = gets,
+                set = set,
+                sets = sets,
+                count = count,
+                max = max,
+                delete = delete,
+                resize = resize,
+                pairs = lruPairs,
+                flush = flush
+            },
+            __newindex = function (o, key, value) return o:set(key, value) end,
+            __call = function (o, key) return o:get(key) end
+        }
+    else  -- pure lru mode, no ttl
+        mt = {
+            __index = {
+                get = get,
+                gets = gets,
+                set = setLru,
+                sets = setsLru,
+                count = count,
+                max = max,
+                delete = deleteLru,
+                resize = resizeLru,
+                pairs = lruPairs,
+            },
+            __newindex = function (o, key, value) return o:set(key, value) end,
+            __call = function (o, key) return o:get(key) end
+        }
     end
 
     return setmetatable({}, mt)
