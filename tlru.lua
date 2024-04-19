@@ -161,6 +161,11 @@ function tlru.new(maxSize, mode)
         if not tuple then
             return nil
         end
+        
+        if newest == tuple then  -- aleady newest
+            return tuple[VALUE]
+        end
+
         cut(tuple)
         setNewest(tuple)
         return tuple[VALUE]
